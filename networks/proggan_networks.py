@@ -102,8 +102,8 @@ class MaskednetE(nn.Module):
         self.head = ConvBlock(3,N,ratio,dilate = mask_width)
         # self.head.conv1.weight[:,:,2:-2,2:-2] = 0
         self.body = nn.Sequential()
-        for i in range(4):
-            if i < 3:
+        for i in range(8):
+            if i < 7:
                 ker = 3
             else:
                 ker = 2

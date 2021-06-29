@@ -131,7 +131,7 @@ def train(opt):
     resolution = opt.resolution
     cudnn.benchmark = True
     now = datetime.now()
-    if opt.mask_in_loss or opt.masked_netE or opt.masked_lpips:
+    if opt.mask_in_loss or opt.masked_netE:
         rectangle_mask = torch.ones((batch_size,1,resolution,resolution)).to(device)
         # i = opt.mask_width_percent
         mask_width = opt.mask_width
@@ -146,16 +146,23 @@ def train(opt):
         rectangle_mask[:,:,mask_width+1:-mask_width,mask_width+1:-mask_width] = 0
         if opt.mask_in_loss:
             opt.lambda_mse = (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
-        # if opt.masked_lpips:
-        #     opt.lambda_lpips = (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
 
-    folder_to_save = 'training/%s_losses_%s_' % (opt.GAN,opt.losses)
+
+    folder_to_save = 'training/%s_losses_' % (opt.GAN)
+    if 'MSE' in opt.losses:
+        folder_to_save += '%.2f_MSE_' % opt.lambda_mse
+    if 'PERCEPTUAL' in opt.losses:
+        folder_to_save += '%.2f_PERCEPTUAL_' % opt.lambda_lpips
+    if 'Z' in opt.losses:
+        folder_to_save += '%.2f_Z_' % opt.lambda_latent
+    if 'norm' in opt.losses:
+        folder_to_save += '%.2f_norm_' % opt.lambda_z_norm
     if opt.masked:
         folder_to_save += 'masked_model_'
     if opt.mask_in_loss:
         folder_to_save += 'masked_mse_loss_mask_width_%d_lambda_mse_%.4f_' % (mask_width,opt.lambda_mse)
-    if opt.masked_lpips:
-        folder_to_save += 'masked_lpips_'
+    if opt.small_RF_lpips:
+        folder_to_save += 'small_RF_14_14_lpips_'
     if 'BigGAN' in opt.GAN and opt.one_class_only:
         class_number = 208
         folder_to_save += '_one_class_only_%d_' % class_number
@@ -300,10 +307,11 @@ def train(opt):
         # run a train epoch of epoch_batches batches
         for step, z_batch in enumerate(pbar(
             epoch_loader, total=epoch_batches), 1):
-            z_batch = z_batch.to(device)
             if 'pgan' in opt.GAN:
+                z_batch = z_batch.to(device)
                 fake_im = netG(z_batch).detach()
             elif 'BigGAN' in opt.GAN:
+                z_batch = torch.normal(0, 1, size=[batch_size, nz]).to(device)
                 if not opt.one_class_only:
                     c = np.random.randint(low=0, high=999, size=(batch_size,))
                 else:
@@ -364,9 +372,9 @@ def train(opt):
                 text += ' z %0.4f' % loss_z.item()
                 loss += loss_z
             if 'PERCEPTUAL' in opt.losses:
-                if opt.masked_lpips:
-                    loss_perceptual = opt.lambda_lpips * perceptual_loss.forward(
-                        reshape(regenerated*rectangle_mask), reshape(fake_im*rectangle_mask)).mean()
+                if opt.small_RF_lpips:
+                    loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
+                        reshape(regenerated), reshape(fake_im),stop_layer=2)).mean() #receptive field of 14*14
                 else:
                     loss_perceptual = opt.lambda_lpips * perceptual_loss.forward(
                         reshape(regenerated), reshape(fake_im)).mean()
