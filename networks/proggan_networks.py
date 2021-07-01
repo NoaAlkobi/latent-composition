@@ -102,14 +102,21 @@ class MaskednetE(nn.Module):
         self.head = ConvBlock(3,N,ratio,dilate = mask_width)
         # self.head.conv1.weight[:,:,2:-2,2:-2] = 0
         self.body = nn.Sequential()
-        for i in range(8):
-            if i < 7:
+        num_layers = int(mask_width / 2)
+        for i in range(num_layers):
+            if i < num_layers - 1:
                 ker = 3
             else:
                 ker = 2
-            block = ConvBlock(N, 2 * N, ker, 1, 0, 1)
+            if N < 1024:
+                block = ConvBlock(N, 2 * N, ker, 1, 0, 1)
+            else:
+                block = ConvBlock(N, N, ker, 1, 0, 1)
             self.body.add_module('block%d'%(i+1),block)
-            N *= 2
+            if N < 1024:
+                N *= 2
+            else:
+                N = 1024
         self.tail = nn.Conv2d(N,512,kernel_size=1,stride=1,padding=0)
         self.adaptaveragepool = nn.AdaptiveAvgPool2d((1,1))
         self.linear = nn.Linear(512,120,bias=True)

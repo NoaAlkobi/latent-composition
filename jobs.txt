@@ -1,0 +1,2 @@
+train_encoder.py --scenario_name=trial_model_run --losses=MSE_PERCEPTUAL --masked_netE=1
+train_encoder.py --scenario_name=trial_model_run1 --netE_type=resnet-18 --losses=MSE_PERCEPTUAL --masked_netE=1 --small_RF_lpips=1

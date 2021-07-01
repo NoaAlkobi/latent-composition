@@ -6,7 +6,7 @@ import itertools
 
 def make_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--netE_type', type=str, required=True, help='type of encoder architecture; e.g. resnet-18, resnet-34')
+    parser.add_argument('--netE_type', type=str, default='resnet-18', required=False, help='type of encoder architecture; e.g. resnet-18, resnet-34')
     parser.add_argument('--netG', type=str, required=False, default='church', help="generator to load")
     parser.add_argument('--batchSize', type=int, default=8, help='input batch size')
     parser.add_argument('--niter', type=int, default=1000, help='number of epochs to train for')
@@ -14,6 +14,7 @@ def make_parser():
     parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
     parser.add_argument('--outf', default='.', help='folder to output model checkpoints')
     parser.add_argument('--seed', default=0, type=int, help='manual seed')
+    parser.add_argument('--gpu_num', default=1, type=int, help='which gpu to send to')
     parser.add_argument('--lambda_latent', default=1.0, type=float, help='loss weighting (latent recovery)')
     parser.add_argument('--lambda_mse', default=1.0, type=float, help='loss weighting (image mse)')
     parser.add_argument('--lambda_z_norm', default=10, type=float, help='loss weighting (image mse)')
@@ -23,14 +24,16 @@ def make_parser():
     parser.add_argument('--finetune', type=str, default='', help="finetune from weights at this path")
     parser.add_argument('--masked', action='store_true', help="train with masking")
     parser.add_argument('--vae_like', action='store_true', help='train with masking, predict mean and sigma (not used in paper)')
-    parser.add_argument('--GAN', type=str, default='pgan') #BigGAN
+    parser.add_argument('--GAN', type=str, default='BigGAN') #BigGAN
     parser.add_argument('--mask_in_loss', type=int, default=0)
     parser.add_argument('--masked_netE', type=int, default=0)
     parser.add_argument('--small_RF_lpips', type=int, default=0)
+    parser.add_argument('--DEBUG_PERCEPTUAL', type=int, default=0)
     parser.add_argument('--one_class_only', type=int, default=0)
     parser.add_argument('--resolution', type=int, default=256)
     parser.add_argument('--mask_width', type=int, default=16)
     parser.add_argument('--losses', type=str, default='MSE_PERCEPTUAL_Z')
+    parser.add_argument('--scenario_name', type=str, default='')
     # parser.add_argument('--only_mse', type=int, default=0)
     # parser.add_argument('--orig_code', type=int, default=1)
 

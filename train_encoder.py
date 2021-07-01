@@ -15,6 +15,8 @@ from networks import networks, proggan_networks
 import matplotlib.pyplot as plt
 from datetime import datetime
 import numpy as np
+import torchvision.models as modelsTorchVision
+from torchvision import transforms
 
 def move_to_cpu(t):
     t = t.to(torch.device('cpu'))
@@ -120,13 +122,33 @@ def display_results(opt,resolution,fake_im,regenerated,folder_to_save,epoch,step
 
     plt.savefig('%s/images_epoch_%d_step_%d.jpg' % (folder_to_save, epoch, step))
     plt.close()
+def vgg_output(input,model,stop_layer=29):
+    slices = [3,8,15,22,29]
+    x = input
+    norm_mean = [0.485, 0.456, 0.406]
+    norm_std = [0.229, 0.224, 0.225]
+    transform = transforms.Compose([
+        transforms.Normalize(norm_mean, norm_std)
+    ])
+    slices_output = []
+    x = transform(x)
+    for name, layer in enumerate(model.features):
+        # if not isinstance(layer, torch.nn.MaxPool2d):
+        x = layer(x)
+        if name in slices:
+            slices_output.append(x)
+        if name == stop_layer: # layer_8 = RF 14*14
+            break
+    return slices_output
+
+
 
 def train(opt):
     print("Random Seed: ", opt.seed)
     random.seed(opt.seed)
     torch.manual_seed(opt.seed)
     has_cuda = torch.cuda.is_available()
-    device = torch.device("cuda:0" if has_cuda else "cpu")
+    device = torch.device("cuda:%d" % opt.gpu_num if has_cuda else "cpu")
     batch_size = int(opt.batchSize)
     resolution = opt.resolution
     cudnn.benchmark = True
@@ -146,28 +168,42 @@ def train(opt):
         rectangle_mask[:,:,mask_width+1:-mask_width,mask_width+1:-mask_width] = 0
         if opt.mask_in_loss:
             opt.lambda_mse = (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
+    if opt.DEBUG_PERCEPTUAL or opt.mask_in_loss:
+        opt.vggModel = modelsTorchVision.vgg19()
+        opt.vggModel.load_state_dict(torch.load("vgg19-dcbb9e9d.pth"))
+        for param in opt.vggModel.parameters():
+            param.requires_grad_(False)
+        opt.vggModel.eval()
+        opt.vggModel.to(device)
 
-
-    folder_to_save = 'training/%s_losses_' % (opt.GAN)
+    if opt.scenario_name=='':
+        folder_to_save = 'training/%s_' % (opt.GAN)
+    else:
+        folder_to_save = 'training/%s_%s_' % (opt.scenario_name,opt.GAN)
+    if opt.DEBUG_PERCEPTUAL:
+        opt.lambda_lpips = 1/50
+        folder_to_save += 'DEBUG_PERCEPTUAL'
+    if opt.mask_in_loss:
+        opt.small_RF_lpips = 1
+        folder_to_save += 'masked_losses_'
+    else:
+        folder_to_save += 'losses_'
     if 'MSE' in opt.losses:
         folder_to_save += '%.2f_MSE_' % opt.lambda_mse
     if 'PERCEPTUAL' in opt.losses:
         folder_to_save += '%.2f_PERCEPTUAL_' % opt.lambda_lpips
+        if opt.small_RF_lpips:
+            folder_to_save += 'small_RF_14_14_lpips_'
     if 'Z' in opt.losses:
         folder_to_save += '%.2f_Z_' % opt.lambda_latent
     if 'norm' in opt.losses:
         folder_to_save += '%.2f_norm_' % opt.lambda_z_norm
     if opt.masked:
         folder_to_save += 'masked_model_'
-    if opt.mask_in_loss:
-        folder_to_save += 'masked_mse_loss_mask_width_%d_lambda_mse_%.4f_' % (mask_width,opt.lambda_mse)
-    if opt.small_RF_lpips:
-        folder_to_save += 'small_RF_14_14_lpips_'
     if 'BigGAN' in opt.GAN and opt.one_class_only:
         class_number = 208
         folder_to_save += '_one_class_only_%d_' % class_number
-    if 'norm' in opt.losses:
-        folder_to_save += 'lambda_z_norm_%.4f_' % opt.lambda_z_norm
+
     if opt.masked_netE:
         folder_to_save += 'masked_netE_mask_width_%d_' % mask_width
     folder_to_save += 'training_%s' % str(now.strftime("%d_%m_%Y_%H_%M_%S"))
@@ -226,7 +262,7 @@ def train(opt):
     # losses + optimizers
     mse_loss = nn.MSELoss()
     l1_loss = nn.L1Loss()
-    perceptual_loss = losses.LPIPS_Loss(net='vgg', use_gpu=has_cuda)
+    perceptual_loss = losses.LPIPS_Loss(net='vgg', use_gpu=has_cuda).to(device)
     util.set_requires_grad(False, perceptual_loss)
     # resize img to 256 before lpips computation
     reshape = training_utils.make_ipol_layer(256)
@@ -316,7 +352,7 @@ def train(opt):
                     c = np.random.randint(low=0, high=999, size=(batch_size,))
                 else:
                     c = np.ones((batch_size,)) * class_number
-                category = torch.Tensor([c]).long().cuda()
+                category = torch.Tensor([c]).long().cuda().to(device)
                 c_shared = netG.shared(category).to(device)[0]
                 fake_im = netG(z_batch, c_shared).detach()
 
@@ -373,11 +409,28 @@ def train(opt):
                 loss += loss_z
             if 'PERCEPTUAL' in opt.losses:
                 if opt.small_RF_lpips:
-                    loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
-                        reshape(regenerated), reshape(fake_im),stop_layer=2)).mean() #receptive field of 14*14
+                    if opt.DEBUG_PERCEPTUAL:
+                        regenerated_vgg = vgg_output(regenerated, opt.vggModel,stop_layer=8)
+                        fake_vgg = vgg_output(fake_im, opt.vggModel,stop_layer=8)
+                        diff = torch.zeros((len(regenerated_vgg)))
+                        for j in range(len(regenerated_vgg)):
+                            diff[j] = ((regenerated_vgg[j] - fake_vgg[j]) ** 2).mean()
+                        loss_perceptual = opt.lambda_lpips * diff.mean()
+                    else:
+                        # tmp = (perceptual_loss.forward(reshape(regenerated), reshape(fake_im),stop_layer=2))
+                        loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
+                            reshape(regenerated), reshape(fake_im),stop_layer=2)).mean() #receptive field of 14*14
                 else:
-                    loss_perceptual = opt.lambda_lpips * perceptual_loss.forward(
-                        reshape(regenerated), reshape(fake_im)).mean()
+                    if opt.DEBUG_PERCEPTUAL:
+                        regenerated_vgg = vgg_output(regenerated, opt.vggModel)
+                        fake_vgg = vgg_output(fake_im, opt.vggModel)
+                        diff = torch.zeros((len(regenerated_vgg)))
+                        for j in range(len(regenerated_vgg)):
+                            diff[j] = ((regenerated_vgg[j] - fake_vgg[j]) ** 2).mean()
+                        loss_perceptual = opt.lambda_lpips * diff.mean()
+                    else:
+                        loss_perceptual = opt.lambda_lpips * perceptual_loss.forward(
+                            reshape(regenerated), reshape(fake_im)).mean()
                 perceptual_total_loss.append(loss_perceptual.detach().cpu().numpy())
                 text += ' lpips %0.4f' % loss_perceptual.item()
                 loss += loss_perceptual
