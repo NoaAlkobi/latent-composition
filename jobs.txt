@@ -1,2 +1,13 @@
-train_encoder.py --scenario_name=trial_model_run --losses=MSE_PERCEPTUAL --masked_netE=1
-train_encoder.py --scenario_name=trial_model_run1 --netE_type=resnet-18 --losses=MSE_PERCEPTUAL --masked_netE=1 --small_RF_lpips=1
+train_encoder.py --scenario_name=id6 --one_class_only=1 --losses=MSE_PERCEPTUAL --small_RF_lpips=1
+train_encoder.py --scenario_name=id7 --one_class_only=1 --losses=MSE --mask_in_loss=1
+train_encoder.py --scenario_name=id9a --one_class_only=1 --losses=MSE_norm --mask_in_loss=1 --masked_netE=1 --lambda_z_norm=4
+train_encoder.py --scenario_name=id10a --one_class_only=1 --losses=PERCEPTUAL_norm --small_RF_lpips=1 --masked_netE=1 --lambda_z_norm=1
+train_encoder.py --scenario_name=id11 --losses=MSE_PERCEPTUAL --small_RF_lpips=1 --lambda_lpips=4
+train_encoder.py --scenario_name=id12 --losses=MSE_PERCEPTUAL --small_RF_lpips=1 --lambda_lpips=4 --one_class_only=1
+train_encoder.py --scenario_name=id1 --one_class_only=1
+train_encoder.py --scenario_name=id2 --one_class_only=1 --losses=MSE
+train_encoder.py --scenario_name=id3 --one_class_only=1 --losses=PERCEPTUAL
+train_encoder.py --scenario_name=id4 --one_class_only=1 --losses=MSE_PERCEPTUAL
+train_encoder.py --scenario_name=id5 --one_class_only=1 --losses=PERCEPTUAL --small_RF_lpips=1
+train_encoder.py --scenario_name=id8 --one_class_only=1 --losses=MSE --mask_in_loss=1 --masked_netE=1
+

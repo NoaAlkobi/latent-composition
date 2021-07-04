@@ -17,6 +17,7 @@ from datetime import datetime
 import numpy as np
 import torchvision.models as modelsTorchVision
 from torchvision import transforms
+import glob
 
 def move_to_cpu(t):
     t = t.to(torch.device('cpu'))
@@ -177,46 +178,50 @@ def train(opt):
         opt.vggModel.to(device)
 
     if opt.scenario_name=='':
-        folder_to_save = 'training/%s_' % (opt.GAN)
+        folder_to_save = 'training/%s' % (opt.GAN)
     else:
-        folder_to_save = 'training/%s_%s_' % (opt.scenario_name,opt.GAN)
+        folder_to_save = 'training/%s_%s' % (opt.scenario_name,opt.GAN)
     if opt.DEBUG_PERCEPTUAL:
         opt.lambda_lpips = 1/50
-        folder_to_save += 'DEBUG_PERCEPTUAL'
+        folder_to_save += '_DEBUG_PERCEPTUAL'
     if opt.mask_in_loss:
         opt.small_RF_lpips = 1
-        folder_to_save += 'masked_losses_'
+        folder_to_save += '_masked_losses'
     else:
-        folder_to_save += 'losses_'
+        folder_to_save += '_losses'
     if 'MSE' in opt.losses:
-        folder_to_save += '%.2f_MSE_' % opt.lambda_mse
+        folder_to_save += '_%.2f_MSE' % opt.lambda_mse
     if 'PERCEPTUAL' in opt.losses:
-        folder_to_save += '%.2f_PERCEPTUAL_' % opt.lambda_lpips
+        folder_to_save += '_%.2f_PERCEPTUAL' % opt.lambda_lpips
         if opt.small_RF_lpips:
-            folder_to_save += 'small_RF_14_14_lpips_'
+            folder_to_save += '_small_RF_14_14_lpips'
     if 'Z' in opt.losses:
-        folder_to_save += '%.2f_Z_' % opt.lambda_latent
+        folder_to_save += '_%.2f_Z' % opt.lambda_latent
     if 'norm' in opt.losses:
-        folder_to_save += '%.2f_norm_' % opt.lambda_z_norm
+        folder_to_save += '_%.2f_norm' % opt.lambda_z_norm
     if opt.masked:
-        folder_to_save += 'masked_model_'
+        folder_to_save += '_masked_model'
     if 'BigGAN' in opt.GAN and opt.one_class_only:
         class_number = 208
-        folder_to_save += '_one_class_only_%d_' % class_number
+        folder_to_save += '_one_class_only_%d' % class_number
 
     if opt.masked_netE:
-        folder_to_save += 'masked_netE_mask_width_%d_' % mask_width
-    folder_to_save += 'training_%s' % str(now.strftime("%d_%m_%Y_%H_%M_%S"))
+        folder_to_save += '_masked_netE_mask_width_%d' % mask_width
+    # folder_to_save += 'training_%s' % str(now.strftime("%d_%m_%Y_%H_%M_%S"))
 
     if not os.path.exists(folder_to_save):
         os.makedirs(folder_to_save)
+    # else:
+    folder_to_save_checkpoints = folder_to_save + '/checkpoints'
+    if not os.path.exists(folder_to_save_checkpoints):
+        os.makedirs(folder_to_save_checkpoints)
     print('folder to save %s' % folder_to_save)
     if opt.mask_in_loss or opt.masked_netE:
         plt.imshow(rectangle_mask[0,0,:,:].cpu())
         plt.savefig('%s/mask.jpg' % folder_to_save)
 
     # tensorboard
-    writer = SummaryWriter(log_dir='%s/runs/%s' % (folder_to_save,os.path.basename(opt.outf)))
+    writer = SummaryWriter(log_dir='%s/runs/%s' % (folder_to_save,os.path.basename(folder_to_save)))
 
     # load the generator
     if 'pgan' in opt.GAN:
@@ -231,6 +236,7 @@ def train(opt):
         print('Error!')
 
     netG = nets.generator.eval()
+    netG = netG.to(device)
     util.set_requires_grad(False, netG)
     # print(netG)
 
@@ -274,6 +280,8 @@ def train(opt):
     test_loader = training_utils.testing_loader(nets, batch_size, opt.seed)
 
     # load data from checkpoint
+    if len(glob.glob(folder_to_save_checkpoints + '/netE*')) > 0 :
+        opt.netE = np.sort(glob.glob(folder_to_save_checkpoints + '/netE*'))[-2]
     assert(not (opt.netE and opt.finetune)), "specify 1 of netE or finetune"
     if opt.finetune:
         checkpoint = torch.load(opt.finetune)
@@ -352,7 +360,7 @@ def train(opt):
                     c = np.random.randint(low=0, high=999, size=(batch_size,))
                 else:
                     c = np.ones((batch_size,)) * class_number
-                category = torch.Tensor([c]).long().cuda().to(device)
+                category = torch.Tensor([c]).long().to(device)
                 c_shared = netG.shared(category).to(device)[0]
                 fake_im = netG(z_batch, c_shared).detach()
 
@@ -538,7 +546,7 @@ def train(opt):
                 if 'BigGAN' in opt.GAN:
                     test_zs = torch.normal(0, 1, size=[batch_size, nz]).to(device)
                     c = np.random.randint(low=0, high=999, size=(batch_size,))
-                    category = torch.Tensor([c]).long().cuda()
+                    category = torch.Tensor([c]).long().to(device)
                     c_shared = netG.shared(category).to(device)[0]
                     fake_im = netG(z_batch, c_shared)
                 else:
@@ -615,11 +623,11 @@ def train(opt):
         netE.train()
 
         # do checkpointing
-        if epoch % 500 == 0 or epoch == opt.niter:
+        if epoch % 200 == 0 or epoch == opt.niter:
             training_utils.make_checkpoint(
                 netE, optimizerE, epoch,
                 test_metrics['loss_total'].avg.item(),
-                '%s/netE_epoch_%d.pth' % (opt.outf, epoch))
+                '%s/netE_epoch_%d.pth' % (folder_to_save_checkpoints, epoch))
         # if epoch == opt.niter:
         #     cmd = 'ln -s netE_epoch_%d.pth %s/model_final.pth' % (epoch, opt.outf)
         #     os.system(cmd)
@@ -630,7 +638,7 @@ def train(opt):
             training_utils.make_checkpoint(
                 netE, optimizerE, epoch,
                 test_metrics['loss_total'].avg.item(),
-                '%s/netE_epoch_best.pth' % (opt.outf))
+                '%s/netE_epoch_best.pth' % (folder_to_save_checkpoints))
             best_val_loss = test_metrics['loss_total'].avg.item()
 
 if __name__ == '__main__':
