@@ -169,7 +169,7 @@ def train(opt):
         rectangle_mask[:,:,mask_width+1:-mask_width,mask_width+1:-mask_width] = 0
         if opt.mask_in_loss:
             opt.lambda_mse = (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
-    if opt.DEBUG_PERCEPTUAL or opt.mask_in_loss:
+    if opt.DEBUG_PERCEPTUAL: # or opt.mask_in_loss:
         opt.vggModel = modelsTorchVision.vgg19()
         opt.vggModel.load_state_dict(torch.load("vgg19-dcbb9e9d.pth"))
         for param in opt.vggModel.parameters():

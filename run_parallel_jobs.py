@@ -8,7 +8,7 @@ from datetime import datetime
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--wait_time', help='In minutes', default=120, type=float)
+    parser.add_argument('--wait_time', help='In minutes', default=10, type=float)
     parser.add_argument('--gpu_num', help='GPU id to use', default=[0, 1, 2, 3], type=str)
     args = parser.parse_args()
     wait_time = args.wait_time * 60
