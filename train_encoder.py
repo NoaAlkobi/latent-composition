@@ -153,7 +153,11 @@ def train(opt):
     batch_size = int(opt.batchSize)
     resolution = opt.resolution
     cudnn.benchmark = True
-    now = datetime.now()
+    # now = datetime.now()
+    if 'masked_netE' in opt.continue_learning:
+        opt.masked_netE = 1
+    if 'masked_losses' in opt.continue_learning:
+        opt.mask_in_loss = 1
     if opt.mask_in_loss or opt.masked_netE:
         rectangle_mask = torch.ones((batch_size,1,resolution,resolution)).to(device)
         # i = opt.mask_width_percent
@@ -177,45 +181,54 @@ def train(opt):
         opt.vggModel.eval()
         opt.vggModel.to(device)
 
-    if opt.scenario_name=='':
-        folder_to_save = 'training/%s' % (opt.GAN)
-    else:
-        folder_to_save = 'training/%s_%s' % (opt.scenario_name,opt.GAN)
-    if opt.DEBUG_PERCEPTUAL:
-        opt.lambda_lpips = 1/50
-        folder_to_save += '_DEBUG_PERCEPTUAL'
-    if opt.mask_in_loss:
-        opt.small_RF_lpips = 1
-        folder_to_save += '_masked_losses'
-    else:
-        folder_to_save += '_losses'
-    if 'MSE' in opt.losses:
-        folder_to_save += '_%.2f_MSE' % opt.lambda_mse
-    if 'PERCEPTUAL' in opt.losses:
-        folder_to_save += '_%.2f_PERCEPTUAL' % opt.lambda_lpips
-        if opt.small_RF_lpips:
-            folder_to_save += '_small_RF_14_14_lpips'
-    if 'Z' in opt.losses:
-        folder_to_save += '_%.2f_Z' % opt.lambda_latent
-    if 'norm' in opt.losses:
-        folder_to_save += '_%.2f_norm' % opt.lambda_z_norm
-    if opt.masked:
-        folder_to_save += '_masked_model'
-    if 'BigGAN' in opt.GAN and opt.one_class_only:
-        class_number = 208
-        folder_to_save += '_one_class_only_%d' % class_number
+    if not opt.continue_learning == '':
+        if not len(glob.glob('training/' + opt.continue_learning + '/checkpoints/netE*.pth')) > 0:
+            opt.continue_learning = ''
+            print('No netE saved in the folder')
+    if opt.continue_learning == '':
+        if opt.scenario_name=='':
+            folder_to_save = 'training/%s' % (opt.GAN)
+        else:
+            folder_to_save = 'training/%s_%s' % (opt.scenario_name,opt.GAN)
+        if opt.DEBUG_PERCEPTUAL:
+            opt.lambda_lpips = 1/50
+            folder_to_save += '_DEBUG_PERCEPTUAL'
+        if opt.mask_in_loss:
+            opt.small_RF_lpips = 1
+            folder_to_save += '_masked_losses'
+        else:
+            folder_to_save += '_losses'
+        if 'MSE' in opt.losses:
+            folder_to_save += '_%.2f_MSE' % opt.lambda_mse
+        if 'PERCEPTUAL' in opt.losses:
+            folder_to_save += '_%.2f_PERCEPTUAL' % opt.lambda_lpips
+            if opt.small_RF_lpips:
+                folder_to_save += '_small_RF_14_14_lpips'
+        if 'Z' in opt.losses:
+            folder_to_save += '_%.2f_Z' % opt.lambda_latent
+        if 'norm' in opt.losses:
+            folder_to_save += '_%.2f_norm' % opt.lambda_z_norm
+        if opt.masked:
+            folder_to_save += '_masked_model'
+        if 'BigGAN' in opt.GAN and opt.one_class_only:
+            class_number = 208
+            folder_to_save += '_one_class_only_%d' % class_number
 
-    if opt.masked_netE:
-        folder_to_save += '_masked_netE_mask_width_%d' % mask_width
-    # folder_to_save += 'training_%s' % str(now.strftime("%d_%m_%Y_%H_%M_%S"))
+        if opt.masked_netE:
+            folder_to_save += '_masked_netE_mask_width_%d' % mask_width
+        # folder_to_save += 'training_%s' % str(now.strftime("%d_%m_%Y_%H_%M_%S"))
 
-    if not os.path.exists(folder_to_save):
-        os.makedirs(folder_to_save)
-    # else:
-    folder_to_save_checkpoints = folder_to_save + '/checkpoints'
-    if not os.path.exists(folder_to_save_checkpoints):
-        os.makedirs(folder_to_save_checkpoints)
-    print('folder to save %s' % folder_to_save)
+        if not os.path.exists(folder_to_save):
+            os.makedirs(folder_to_save)
+        # else:
+        folder_to_save_checkpoints = folder_to_save + '/checkpoints'
+        if not os.path.exists(folder_to_save_checkpoints):
+            os.makedirs(folder_to_save_checkpoints)
+        print('folder to save %s' % folder_to_save)
+    else:
+        folder_to_save = 'training/' + opt.continue_learning
+        folder_to_save_checkpoints = folder_to_save + '/checkpoints'
+
     if opt.mask_in_loss or opt.masked_netE:
         plt.imshow(rectangle_mask[0,0,:,:].cpu())
         plt.savefig('%s/mask.jpg' % folder_to_save)
@@ -259,8 +272,6 @@ def train(opt):
     if opt.masked_netE:
         netE = proggan_networks.MaskednetE(ratio,mask_width,netE)
 
-        # netE = proggan_networks.adjust_netE(netE, mask_width, resolution, ratio)
-
     netE = netE.to(device).train()
     nets.encoder = netE
     # print(netE)
@@ -298,13 +309,25 @@ def train(opt):
             sd = {k: v for k, v in sd.items() if 'fc' not in k}
         netE.load_state_dict(sd, strict=False)
     if opt.netE:
-        checkpoint = torch.load(opt.netE)
+        checkpoint = torch.load(opt.netE,map_location=device)
         netE.load_state_dict(checkpoint['state_dict'])
         optimizerE.load_state_dict(checkpoint['optimizer'])
         start_ep = checkpoint['epoch'] + 1
         if 'val_loss' in checkpoint:
             best_val_loss = checkpoint['val_loss']
 
+        if opt.continue_learning:
+            start_ep = 0
+            folder_to_save += '/continue_learning'
+            if not os.path.exists(folder_to_save):
+                os.makedirs(folder_to_save)
+            folder_to_save_checkpoints = folder_to_save + '/checkpoints'
+            if not os.path.exists(folder_to_save_checkpoints):
+                os.makedirs(folder_to_save_checkpoints)
+            # opt.lambda_z_norm = 0.1
+            print('continue learning with different params')
+        else:
+            print('continue learning from epoch %d' % start_ep)
     # uses 1600 samples per epoch, computes number of batches
     # based on batch size
     epoch_batches = 1600 // batch_size

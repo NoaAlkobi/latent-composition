@@ -28,6 +28,7 @@ def make_parser():
     parser.add_argument('--mask_in_loss', type=int, default=0)
     parser.add_argument('--masked_netE', type=int, default=0)
     parser.add_argument('--small_RF_lpips', type=int, default=0)
+    parser.add_argument('--continue_learning', type=str, default='')
     parser.add_argument('--DEBUG_PERCEPTUAL', type=int, default=0)
     parser.add_argument('--one_class_only', type=int, default=0)
     parser.add_argument('--resolution', type=int, default=256)
