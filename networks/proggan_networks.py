@@ -76,12 +76,12 @@ def load_proggan_encoder(domain, nz=512, outdim=256, use_RGBM=True, use_VAE=Fals
 class ConvBlock(nn.Sequential):
     def __init__(self, in_channel, out_channel, ker_size,dilate=1, padd=0, stride=1):
         super(ConvBlock,self).__init__()
-        self.conv1 = nn.Conv2d(in_channel, out_channel, kernel_size=ker_size, stride=stride, padding=padd,dilation=dilate)
+        self.conv1 = nn.Conv2d(in_channel, out_channel, kernel_size=ker_size, stride=stride, padding=padd,dilation=dilate) #add bias
         self.norm1 = nn.BatchNorm2d(out_channel) #out_channel
         self.relu1 = nn.LeakyReLU(0.2, inplace=True)
-        self.conv2 = nn.Conv2d(out_channel, out_channel, kernel_size=1, stride=1, padding=0,dilation=1)
+        self.conv2 = nn.Conv2d(out_channel, out_channel, kernel_size=1, stride=1, padding=0,dilation=1)#add bias
         self.norm2 = nn.BatchNorm2d(out_channel) #out_channel
-        self.conv3 = nn.Conv2d(out_channel, out_channel, kernel_size=1, stride=1, padding=0,dilation=1)
+        self.conv3 = nn.Conv2d(out_channel, out_channel, kernel_size=1, stride=1, padding=0,dilation=1)#add bias
         self.norm3 = nn.BatchNorm2d(out_channel) #out_channel
 
     def forward(self,x):
@@ -102,7 +102,7 @@ class MaskednetE(nn.Module):
         self.head = ConvBlock(3,N,ratio,dilate = mask_width)
         # self.head.conv1.weight[:,:,2:-2,2:-2] = 0
         self.body = nn.Sequential()
-        num_layers = int(mask_width / 2)
+        num_layers = int(mask_width / 2) - 1
         for i in range(num_layers):
             if i < num_layers - 1:
                 ker = 3
@@ -117,20 +117,23 @@ class MaskednetE(nn.Module):
                 N *= 2
             else:
                 N = 1024
-        self.tail = nn.Conv2d(N,512,kernel_size=1,stride=1,padding=0)
+        self.tail = nn.Conv2d(N,512,kernel_size=3,stride=1,padding=0) #add bias
         self.adaptaveragepool = nn.AdaptiveAvgPool2d((1,1))
-        self.linear = nn.Linear(512,120,bias=True)
+        self.linear = nn.Linear(512,120,bias=True) #,bias=True
         self.to_z = netE.to_z
 
-    def forward(self,x,mask,GAN):
-        x = x*mask
-        # self.head.conv1.weight[:,:,2:-2,2:-2] = 0
+    def forward(self,x,mask,mask_width,GAN):
+        x = x * mask
+        # x[:,:,mask_width:-mask_width,mask_width:-mask_width] = 0
+        self.head.conv1.weight[:,:,1:-1,1:-1].data.fill_(0.0)
+        if self.head.conv1.weight[:,:,1:-1,1:-1].sum() != 0:
+            e=3
         x = self.head(x)
         x = self.body(x)
         x = self.tail(x)
         # if x.shape[2] != 1 or x.shape[3] != 1:
         #     print('check the network!!')
-        x = self.adaptaveragepool(x)
+        # x = self.adaptaveragepool(x)
         if 'BigGAN' in GAN:
             x = x.reshape(x.shape[0],x.shape[1])
             x = self.linear(x)

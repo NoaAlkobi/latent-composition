@@ -275,7 +275,23 @@ def train(opt):
     netE = netE.to(device).train()
     nets.encoder = netE
     # print(netE)
-
+    debug = False
+    if debug:
+        netE = netE.to(device).eval()
+        size_img = 512
+        pixel = int(size_img/2)
+        pulse_img = torch.zeros((1,3,size_img,size_img))
+        pulse_response = torch.zeros(size_img-resolution,size_img-resolution)
+        pulse_img[:,:,pixel,pixel] = 255
+        for j in range(size_img-resolution):
+            for i in range(size_img-resolution):
+                tmp_img = pulse_img[:,:,j:j+resolution,i:i+resolution].to(device)
+                encoded = netE(tmp_img, rectangle_mask, mask_width, opt.GAN)
+                # if tmp_img.sum() == 0 and encoded.mean().detach() != 0:
+                #     encoded = netE(tmp_img, rectangle_mask, mask_width, opt.GAN)
+                # if (tmp_img*rectangle_mask).sum() != 0 and encoded.mean().detach() == 0:
+                #     encoded = netE(tmp_img, rectangle_mask, mask_width, opt.GAN)
+                pulse_response[j,i] = encoded.mean().detach()
     # losses + optimizers
     mse_loss = nn.MSELoss()
     l1_loss = nn.L1Loss()
@@ -292,7 +308,7 @@ def train(opt):
 
     # load data from checkpoint
     if len(glob.glob(folder_to_save_checkpoints + '/netE*')) > 0 :
-        opt.netE = np.sort(glob.glob(folder_to_save_checkpoints + '/netE*'))[-2]
+        opt.netE = np.sort(glob.glob(folder_to_save_checkpoints + '/netE*'))[-1]
     assert(not (opt.netE and opt.finetune)), "specify 1 of netE or finetune"
     if opt.finetune:
         checkpoint = torch.load(opt.finetune)
@@ -336,7 +352,7 @@ def train(opt):
     #save opt arguments
     file_name = folder_to_save + r'/inf.txt'
     opt.file_name = file_name
-    f = open(file_name,"w")
+    f = open(file_name,"a")
     now = datetime.now()
     f.write(str(now.strftime("%d/%m/%Y %H:%M:%S")))
     f.write("\n")
@@ -409,7 +425,14 @@ def train(opt):
             else:
                 # standard RGB encoding
                 if opt.masked_netE:
-                    encoded = netE(fake_im,rectangle_mask,opt.GAN)
+                    # fake_im[:, :, mask_width:-mask_width, mask_width:-mask_width] = np.nan
+                    encoded = netE(fake_im,rectangle_mask,mask_width,opt.GAN)
+                    if debug:
+                        gradients = torch.autograd.grad(outputs=encoded, inputs=fake_im,
+                                                        grad_outputs=torch.ones_like(encoded).to(device),
+                                                        # .cuda(), #if use_cuda else torch.ones(
+                                                        # disc_interpolates.size()),
+                                                        create_graph=True, retain_graph=True, only_inputs=True)[0]
                 else:
                     encoded = netE(fake_im)
                 if 'BigGAN' in opt.GAN:
@@ -449,8 +472,12 @@ def train(opt):
                         loss_perceptual = opt.lambda_lpips * diff.mean()
                     else:
                         # tmp = (perceptual_loss.forward(reshape(regenerated), reshape(fake_im),stop_layer=2))
-                        loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
-                            reshape(regenerated), reshape(fake_im),stop_layer=2)).mean() #receptive field of 14*14
+                        if opt.mask_in_loss:
+                            loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
+                                reshape(regenerated), reshape(fake_im),stop_layer=[2,True])).mean()
+                        else:
+                            loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
+                                reshape(regenerated), reshape(fake_im),stop_layer=[2,None])).mean() #receptive field of 14*14
                 else:
                     if opt.DEBUG_PERCEPTUAL:
                         regenerated_vgg = vgg_output(regenerated, opt.vggModel)
@@ -594,7 +621,7 @@ def train(opt):
                         encoded = encoded_mean # just use mean in z loss
                 else:
                     if opt.masked_netE:
-                        encoded = netE(fake_im, rectangle_mask, opt.GAN)
+                        encoded = netE(fake_im, rectangle_mask,mask_width, opt.GAN)
                     else:
                         encoded = netE(fake_im)
                     if 'BigGAN' in opt.GAN:
@@ -646,7 +673,7 @@ def train(opt):
         netE.train()
 
         # do checkpointing
-        if epoch % 200 == 0 or epoch == opt.niter:
+        if epoch % 100 == 0 or epoch == opt.niter:
             training_utils.make_checkpoint(
                 netE, optimizerE, epoch,
                 test_metrics['loss_total'].avg.item(),
