@@ -191,7 +191,7 @@ def train(opt):
 
         rectangle_mask[:,:,mask_width:-mask_width,mask_width:-mask_width] = 0
         if opt.mask_in_loss:
-            opt.lambda_mse = (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
+            pixel_ratio = (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
 
     else:
         mask_width = 0
@@ -240,7 +240,7 @@ def train(opt):
         if opt.masked:
             folder_to_save += '_masked_model'
         if 'BigGAN' in opt.GAN and opt.one_class_only:
-            # class_number = 208
+            class_number = 208
             folder_to_save += '_one_class_only_%d' % class_number
 
         if opt.masked_netE:
@@ -400,7 +400,7 @@ def train(opt):
         import copy
         #change FC to conv layer:
         netE_copy = copy.deepcopy(netE).eval()
-        opt.stride=1
+
         if opt.stride == 1:
             count = 0
             for name, module in netE._modules.items():
@@ -460,15 +460,15 @@ def train(opt):
                 x = x.type(torch.cuda.FloatTensor) if (has_cuda) else x.type(torch.FloatTensor)
                 # output = training_utils.best_place_to_insert(x, netE, resolution, folder_to_save,device)
                 real_img[i, :, :, :] = x[:,:,0:resolution, 0:resolution]
-                real_img[i+1, :, :, :] = x[:, :, 1:1+resolution, 0:resolution]
-                real_img[i + 2, :, :, :] = x[:, :, 1:1 + resolution, 1:1+resolution]
-                real_img[i + 3, :, :, :] = x[:, :, 0:resolution, 1:1+resolution]
+                # real_img[i+1, :, :, :] = x[:, :, 1:1+resolution, 0:resolution]
+                # real_img[i + 2, :, :, :] = x[:, :, 1:1 + resolution, 1:1+resolution]
+                # real_img[i + 3, :, :, :] = x[:, :, 0:resolution, 1:1+resolution]
                 # real_img = torch.zeros((1, 3, x.shape[2], x.shape[3]))
-                real_img_tmp = x[:,:,0:resolution, 0:resolution]
-                output = netE(real_img_tmp.to(device))
-                real_img_tmp = x[:,:,0:resolution, 0:resolution]
-                output = netE_copy(real_img_tmp.to(device))
-                break
+                # real_img_tmp = x[:,:,0:resolution, 0:resolution]
+                # output = netE(real_img_tmp.to(device))
+                # real_img_tmp = x[:,:,0:resolution, 0:resolution]
+                # output = netE_copy(real_img_tmp.to(device))
+                # break
                 #
         # pass images through netE:
         num_itr = int(np.ceil(len(files) / batch_size))
@@ -594,7 +594,7 @@ def train(opt):
             loss = 0
             if 'MSE' in opt.losses:
                 if opt.mask_in_loss:
-                    loss_mse = torch.mean((regenerated - fake_im) ** 2 * rectangle_mask) #* (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
+                    loss_mse = torch.mean((regenerated - fake_im) ** 2 * rectangle_mask) * pixel_ratio
                 else:
                     loss_mse = mse_loss(regenerated, fake_im)
                 loss_mse *= opt.lambda_mse
