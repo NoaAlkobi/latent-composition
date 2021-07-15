@@ -1,29 +1,10 @@
-train_encoder.py --scenario_name=id2a --one_class_only=1 --losses=MSE_norm --lambda_z_norm=0.01
-train_encoder.py --scenario_name=id14 --losses=MSE_PERCEPTUAL_norm --masked_netE=1 --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1 --lambda_z_norm=0.01
-train_encoder.py --scenario_name=id14a --losses=MSE_PERCEPTUAL --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1
-train_encoder.py --scenario_name=id7a --one_class_only=1 --losses=MSE_norm --mask_in_loss=1 --lambda_z_norm=0.01
+train_encoder.py --scenario_name=id_mask32 --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1 --mask_width=32
+train_encoder.py --scenario_name=id_mask64 --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1 --mask_width=64
+train_encoder.py --scenario_name=id_mask16_new --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1
+train_encoder.py --scenario_name=id_mask32_nonorm --losses=MSE_PERCEPTUAL --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1 --mask_width=32
 
-train_encoder.py --scenario_name=id9b_new --one_class_only=1 --losses=MSE_norm --mask_in_loss=1 --masked_netE=1 --lambda_z_norm=0.01 --continue_learning=id9b_new_BigGAN_masked_losses_4.15_MSE_1.00_norm_one_class_only_208_masked_netE_mask_width_16
-train_encoder.py --scenario_name=id13c --losses=MSE_norm --masked_netE=1 --lambda_z_norm=0.01 --continue_learning=id9b_new_BigGAN_masked_losses_4.15_MSE_1.00_norm_one_class_only_208_masked_netE_mask_width_16
-train_encoder.py --scenario_name=id2a --one_class_only=1 --losses=MSE_norm --lambda_z_norm=0.05 --continue_learning=id2a_BigGAN_losses_1.00_MSE_0.01_norm_one_class_only_208
+train_encoder.py --scenario_name=id0_MSE --one_class_only=1 --losses=MSE --continue_learning=id_new_BigGAN_losses_1.00_MSE_1.00_PERCEPTUAL_one_class_only_208
+train_encoder.py --scenario_name=id1_norm0 --one_class_only=1 --mask_in_loss=1 --losses=MSE_norm0 --lambda_z_norm=0.005
 
-
-train_encoder.py --scenario_name=id13d --losses=MSE_norm --masked_netE=1 --lambda_z_norm=0.01 --mask_in_loss=1
-train_encoder.py --scenario_name=id13e --losses=MSE_norm --masked_netE=1 --lambda_z_norm=0.01 --mask_in_loss=1
-train_encoder.py --scenario_name=id13_new --losses=MSE_norm --masked_netE=1
-train_encoder.py --scenario_name=id13a --losses=MSE_norm --lambda_z_norm=0.1 --continue_learning=id13_new_BigGAN_losses_1.00_MSE_10.00_norm_masked_netE_mask_width_16
-
-
-train_encoder.py --scenario_name=id1 --one_class_only=1
-train_encoder.py --scenario_name=id2 --one_class_only=1 --losses=MSE
-train_encoder.py --scenario_name=id3 --one_class_only=1 --losses=PERCEPTUAL
-train_encoder.py --scenario_name=id4 --one_class_only=1 --losses=MSE_PERCEPTUAL
-train_encoder.py --scenario_name=id5 --one_class_only=1 --losses=PERCEPTUAL --small_RF_lpips=1
-train_encoder.py --scenario_name=id8 --one_class_only=1 --losses=MSE --mask_in_loss=1 --masked_netE=1
-train_encoder.py --scenario_name=id6 --one_class_only=1 --losses=MSE_PERCEPTUAL --small_RF_lpips=1
-train_encoder.py --scenario_name=id7 --one_class_only=1 --losses=MSE --mask_in_loss=1
-train_encoder.py --scenario_name=id10a --one_class_only=1 --losses=PERCEPTUAL_norm --small_RF_lpips=1 --masked_netE=1 --lambda_z_norm=1
-train_encoder.py --scenario_name=id11 --losses=MSE_PERCEPTUAL --small_RF_lpips=1 --lambda_lpips=4
-train_encoder.py --scenario_name=id12 --losses=MSE_PERCEPTUAL --small_RF_lpips=1 --lambda_lpips=4 --one_class_only=1
-train_encoder.py --scenario_name=id13 --losses=MSE_norm --masked_netE=1
-train_encoder.py --scenario_name=id9b --one_class_only=1 --losses=MSE_norm --mask_in_loss=1 --masked_netE=1 --lambda_z_norm=1
+train_encoder.py --scenario_name=id16_no_padding --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1 --padding=0
+train_encoder.py --scenario_name=id32_no_padding --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1 --small_RF_lpips=1 --one_class_only=1 --padding=0 --mask_width=32

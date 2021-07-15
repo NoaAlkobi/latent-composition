@@ -3,13 +3,17 @@ from __future__ import print_function
 import os
 import random
 ##noa
+import matplotlib.axes
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torchvision.utils as vutils
+from matplotlib import patches
 from torch.utils.tensorboard import SummaryWriter
 import oyaml as yaml
+import my_resnet as resnet
+# import cv2
 from utils import pbar, util, masking, losses, training_utils
 from networks import networks, proggan_networks
 import matplotlib.pyplot as plt
@@ -40,39 +44,60 @@ def convert_image_np(inp):
     inp = np.clip(inp,0,1)
     return inp
 
-def display_results(opt,resolution,fake_im,regenerated,folder_to_save,epoch,step,hints_fake=0):
+def display_results(opt,resolution,fake_im,regenerated,folder_to_save,epoch,step,mask_width=0,hints_fake=0):
     plt.figure(figsize=(20, 10))
     if not opt.masked:
-        plt.subplot(2, 4, 1)
-        plt.imshow(convert_image_np(fake_im[0, :, :, :].reshape((1, 3, resolution, resolution))))
-        plt.title('real image (input)')
-        plt.axis('off')
-        plt.subplot(2, 4, 5)
-        plt.imshow(
-            convert_image_np(regenerated[0, :, :, :].detach().reshape((1, 3, resolution, resolution))))
-        plt.title('generated image G(z)')
-        plt.axis('off')
-        plt.subplot(2, 4, 2)
-        plt.imshow(convert_image_np(fake_im[1, :, :, :].reshape((1, 3, resolution, resolution))))
-        plt.axis('off')
-        plt.subplot(2, 4, 6)
-        plt.imshow(
-            convert_image_np(regenerated[1, :, :, :].detach().reshape((1, 3, resolution, resolution))))
-        plt.axis('off')
-        plt.subplot(2, 4, 3)
-        plt.imshow(convert_image_np(fake_im[2, :, :, :].reshape((1, 3, resolution, resolution))))
-        plt.axis('off')
-        plt.subplot(2, 4, 7)
-        plt.imshow(
-            convert_image_np(regenerated[2, :, :, :].detach().reshape((1, 3, resolution, resolution))))
-        plt.axis('off')
-        plt.subplot(2, 4, 4)
-        plt.imshow(convert_image_np(fake_im[3, :, :, :].reshape((1, 3, resolution, resolution))))
-        plt.axis('off')
-        plt.subplot(2, 4, 8)
-        plt.imshow(
-            convert_image_np(regenerated[3, :, :, :].detach().reshape((1, 3, resolution, resolution))))
-        plt.axis('off')
+        figure, ax = plt.subplots(2,4)
+        ax[0,0].imshow(convert_image_np(fake_im[0, :, :, :].reshape((1, 3, resolution, resolution))))
+        ax[0,0].set_title('real image (input)')
+        ax[0,0].axis('off')
+        ax[1,0].imshow(convert_image_np(regenerated[0, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        ax[1,0].set_title('generated image G(z)')
+        ax[1,0].axis('off')
+        if fake_im.shape[0] > 1:
+            ax[0,1].imshow(convert_image_np(fake_im[1, :, :, :].reshape((1, 3, resolution, resolution))))
+            ax[0,1].axis('off')
+            ax[1,1].imshow(convert_image_np(regenerated[1, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+            ax[1,1].axis('off')
+            ax[0, 2].imshow(convert_image_np(fake_im[2, :, :, :].reshape((1, 3, resolution, resolution))))
+
+            ax[0,2].axis('off')
+            ax[1,2].imshow(convert_image_np(regenerated[2, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+            ax[1,2].axis('off')
+
+            ax[0,3].imshow(convert_image_np(fake_im[3, :, :, :].reshape((1, 3, resolution, resolution))))
+            ax[0,3].axis('off')
+            ax[1,3].imshow(convert_image_np(regenerated[3, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+            ax[1,3].axis('off')
+
+        if mask_width != 0:
+            rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width, resolution - 2 * mask_width, edgecolor='r', facecolor="none")
+            ax[0,0].add_patch(rect)
+            rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width, resolution - 2 * mask_width, edgecolor='r', facecolor="none")
+            ax[1,0].add_patch(rect)
+
+            if fake_im.shape[0] > 1:
+                rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width,
+                                         resolution - 2 * mask_width,
+                                         edgecolor='r', facecolor="none")
+                ax[0, 1].add_patch(rect)
+                rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width, resolution - 2 * mask_width,
+                                         edgecolor='r', facecolor="none")
+                ax[0, 2].add_patch(rect)
+                rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width, resolution - 2 * mask_width,
+                                         edgecolor='r', facecolor="none")
+                ax[0, 3].add_patch(rect)
+
+                rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width, resolution - 2 * mask_width,
+                                         edgecolor='r', facecolor="none")
+                ax[1, 1].add_patch(rect)
+                rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width, resolution - 2 * mask_width,
+                                         edgecolor='r', facecolor="none")
+                ax[1, 2].add_patch(rect)
+                rect = patches.Rectangle((mask_width, mask_width), resolution - 2 * mask_width, resolution - 2 * mask_width,
+                                         edgecolor='r', facecolor="none")
+                ax[1, 3].add_patch(rect)
+
     else:
         plt.subplot(3, 4, 1)
         plt.imshow(convert_image_np(fake_im[0, :, :, :].reshape((1, 3, resolution, resolution))))
@@ -83,46 +108,40 @@ def display_results(opt,resolution,fake_im,regenerated,folder_to_save,epoch,step
         plt.title('masked image')
         plt.axis('off')
         plt.subplot(3, 4, 9)
-        plt.imshow(
-            convert_image_np(regenerated[0, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        plt.imshow(convert_image_np(regenerated[0, :, :, :].detach().reshape((1, 3, resolution, resolution))))
         plt.title('generated image G(z)')
         plt.axis('off')
         plt.subplot(3, 4, 2)
         plt.imshow(convert_image_np(fake_im[1, :, :, :].reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 6)
-        plt.imshow(
-            convert_image_np(hints_fake[1, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        plt.imshow(convert_image_np(hints_fake[1, :, :, :].detach().reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 10)
-        plt.imshow(
-            convert_image_np(regenerated[1, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        plt.imshow(convert_image_np(regenerated[1, :, :, :].detach().reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 3)
         plt.imshow(convert_image_np(fake_im[2, :, :, :].reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 7)
-        plt.imshow(
-            convert_image_np(hints_fake[2, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        plt.imshow(convert_image_np(hints_fake[2, :, :, :].detach().reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 11)
-        plt.imshow(
-            convert_image_np(regenerated[2, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        plt.imshow(convert_image_np(regenerated[2, :, :, :].detach().reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 4)
         plt.imshow(convert_image_np(fake_im[3, :, :, :].reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 8)
-        plt.imshow(
-            convert_image_np(hints_fake[3, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        plt.imshow(convert_image_np(hints_fake[3, :, :, :].detach().reshape((1, 3, resolution, resolution))))
         plt.axis('off')
         plt.subplot(3, 4, 12)
-        plt.imshow(
-            convert_image_np(regenerated[3, :, :, :].detach().reshape((1, 3, resolution, resolution))))
+        plt.imshow(convert_image_np(regenerated[3, :, :, :].detach().reshape((1, 3, resolution, resolution))))
         plt.axis('off')
 
     plt.savefig('%s/images_epoch_%d_step_%d.jpg' % (folder_to_save, epoch, step))
     plt.close()
+
 def vgg_output(input,model,stop_layer=29):
     slices = [3,8,15,22,29]
     x = input
@@ -170,9 +189,12 @@ def train(opt):
                 ratio = resolution / mask_width
         ratio = int(ratio)
 
-        rectangle_mask[:,:,mask_width+1:-mask_width,mask_width+1:-mask_width] = 0
+        rectangle_mask[:,:,mask_width:-mask_width,mask_width:-mask_width] = 0
         if opt.mask_in_loss:
             opt.lambda_mse = (resolution ** 2) / rectangle_mask[0,0,:,:].sum()
+
+    else:
+        mask_width = 0
     if opt.DEBUG_PERCEPTUAL: # or opt.mask_in_loss:
         opt.vggModel = modelsTorchVision.vgg19()
         opt.vggModel.load_state_dict(torch.load("vgg19-dcbb9e9d.pth"))
@@ -180,7 +202,8 @@ def train(opt):
             param.requires_grad_(False)
         opt.vggModel.eval()
         opt.vggModel.to(device)
-
+    if 'BigGAN' in opt.GAN and opt.one_class_only:
+        class_number = 208
     if not opt.continue_learning == '':
         if not len(glob.glob('training/' + opt.continue_learning + '/checkpoints/netE*.pth')) > 0:
             opt.continue_learning = ''
@@ -190,12 +213,16 @@ def train(opt):
             folder_to_save = 'training/%s' % (opt.GAN)
         else:
             folder_to_save = 'training/%s_%s' % (opt.scenario_name,opt.GAN)
+        if opt.padding == 0:
+            folder_to_save += '_no_padding'
+        if opt.stride == 1:
+            folder_to_save += '_stride_1'
         if opt.DEBUG_PERCEPTUAL:
             opt.lambda_lpips = 1/50
             folder_to_save += '_DEBUG_PERCEPTUAL'
         if opt.mask_in_loss:
             opt.small_RF_lpips = 1
-            folder_to_save += '_masked_losses'
+            folder_to_save += '_masked_%d_losses' % opt.mask_width
         else:
             folder_to_save += '_losses'
         if 'MSE' in opt.losses:
@@ -206,12 +233,14 @@ def train(opt):
                 folder_to_save += '_small_RF_14_14_lpips'
         if 'Z' in opt.losses:
             folder_to_save += '_%.2f_Z' % opt.lambda_latent
-        if 'norm' in opt.losses:
-            folder_to_save += '_%.2f_norm' % opt.lambda_z_norm
+        if 'norm0' in opt.losses:
+            folder_to_save += '_%.2f_norm_0' % opt.lambda_z_norm
+        if 'norm1' in opt.losses:
+            folder_to_save += '_%.2f_norm_1' % opt.lambda_z_norm
         if opt.masked:
             folder_to_save += '_masked_model'
         if 'BigGAN' in opt.GAN and opt.one_class_only:
-            class_number = 208
+            # class_number = 208
             folder_to_save += '_one_class_only_%d' % class_number
 
         if opt.masked_netE:
@@ -261,12 +290,26 @@ def train(opt):
     depth = int(opt.netE_type.split('-')[-1])
     has_masked_input = opt.masked or opt.vae_like
     assert(not (opt.masked and opt.vae_like)), "specify 1 of masked or vae_like"
+    if opt.padding == 0:
+        which_model = 'no_padd'
+    else:
+        which_model = 'orig'
+    # which_model = 'orig'
     netE = proggan_networks.load_proggan_encoder(domain=None, nz=nz,
                                                  outdim=out_shape,
                                                  use_RGBM=opt.masked,
                                                  use_VAE=opt.vae_like,
                                                  resnet_depth=depth,
-                                                 ckpt_path=None)
+                                                 ckpt_path=None,which_model=which_model)
+    #
+    # if not opt.padding:
+    #     for name, module in netE._modules.items():
+    #         if 'conv' in name or 'max' in name:
+    #             module.padding = (0,0)
+    #         if 'layer' in name:
+    #             for j in range(len(module)):
+    #                 module[j].conv1.padding = (0,0)
+    #                 module[j].conv2.padding = (0,0)
 
 
     if opt.masked_netE:
@@ -306,9 +349,11 @@ def train(opt):
     train_loader = training_utils.training_loader(nets, batch_size, opt.seed)
     test_loader = training_utils.testing_loader(nets, batch_size, opt.seed)
 
+
+
     # load data from checkpoint
     if len(glob.glob(folder_to_save_checkpoints + '/netE*')) > 0 :
-        opt.netE = np.sort(glob.glob(folder_to_save_checkpoints + '/netE*'))[-1]
+        opt.netE = np.sort(glob.glob(folder_to_save_checkpoints + '/netE*'))[-2]
     assert(not (opt.netE and opt.finetune)), "specify 1 of netE or finetune"
     if opt.finetune:
         checkpoint = torch.load(opt.finetune)
@@ -348,6 +393,108 @@ def train(opt):
     # based on batch size
     epoch_batches = 1600 // batch_size
 
+    # eval the model with real images
+    eval_model = False
+    if eval_model:
+        from skimage import io as img
+        import copy
+        #change FC to conv layer:
+        netE_copy = copy.deepcopy(netE).eval()
+        opt.stride=1
+        if opt.stride == 1:
+            count = 0
+            for name, module in netE._modules.items():
+                # print(module)
+                if 'conv' in name or 'max' in name:
+                    module.dilation = (2 ** count, 2 ** count)
+                    if module.stride != (1, 1):
+                        count += 1
+                        module.stride = (1, 1)
+                if 'layer' in name:
+                    for j in range(len(module)):
+                        for name_layer, module_layer in module[j]._modules.items():
+                            if 'conv' in name_layer or 'max' in name_layer:
+                                module_layer.dilation = (2 ** count, 2 ** count)
+                                if module_layer.stride != (1, 1):
+                                    count += 1
+                                    module_layer.stride = (1, 1)
+                            if j == 0 and 'downsample' in name_layer:
+                                module_layer[0].dilation = (2 ** count, 2 ** count)
+                                if module_layer[0].stride != (1, 1):
+                                    # count += 1
+                                    module_layer[0].stride = (1, 1)
+
+            in_ch = 512
+            out_ch = 512
+            kernel_size = 2
+            netE.avgpool = nn.Conv2d(in_ch,out_ch,kernel_size,stride=1,padding=0,dilation=(2 ** count,2 ** count),bias=False).to(device)
+            netE.avgpool.weight.data.fill_(1 / (kernel_size ** 2))
+
+            fc = netE.fc.state_dict()
+            in_ch = fc["weight"].size(1)
+            out_ch = fc["weight"].size(0)
+            conv = nn.Conv2d(in_ch, out_ch, 1, dilation = (2 ** count))
+            conv.load_state_dict({"weight": fc["weight"].view(out_ch, in_ch, 1, 1),
+                                  "bias": fc["bias"]})
+            netE.fc = conv.to(device)
+
+        print(netE)
+
+        # load natural images
+        folder = '../SinGAN-master/Input/for_vgg/real'
+        files = glob.glob('%s/*' % folder)
+        real_img = torch.zeros((len(files), 3, resolution, resolution))
+        for i, file in enumerate(files):
+            if ('png' in file or 'jpg' in file):
+                x = img.imread(file)
+                if x.shape[0] < resolution or x.shape[1] < resolution:
+                    continue
+                    # x = cv2.resize(x, (resolution, resolution))
+                # plt.imshow(x)
+                # plt.show()
+                x = x[:, :, :, None]
+                x = x.transpose((3, 2, 0, 1)) / 255
+                x = ((x - 0.5) * 2)  # .clamp(-1,1)
+                x = torch.from_numpy(x).to(device)
+                print(x.dtype)
+                x = x.type(torch.cuda.FloatTensor) if (has_cuda) else x.type(torch.FloatTensor)
+                # output = training_utils.best_place_to_insert(x, netE, resolution, folder_to_save,device)
+                real_img[i, :, :, :] = x[:,:,0:resolution, 0:resolution]
+                real_img[i+1, :, :, :] = x[:, :, 1:1+resolution, 0:resolution]
+                real_img[i + 2, :, :, :] = x[:, :, 1:1 + resolution, 1:1+resolution]
+                real_img[i + 3, :, :, :] = x[:, :, 0:resolution, 1:1+resolution]
+                # real_img = torch.zeros((1, 3, x.shape[2], x.shape[3]))
+                real_img_tmp = x[:,:,0:resolution, 0:resolution]
+                output = netE(real_img_tmp.to(device))
+                real_img_tmp = x[:,:,0:resolution, 0:resolution]
+                output = netE_copy(real_img_tmp.to(device))
+                break
+                #
+        # pass images through netE:
+        num_itr = int(np.ceil(len(files) / batch_size))
+        real_img = real_img.to(device)
+        folder_eval = os.path.join(folder_to_save, 'eval')
+        if not os.path.exists(folder_eval):
+            os.makedirs(folder_eval)
+        for j in range(num_itr):
+            if 4 * j + 4 < real_img.shape[0]:
+                real_img_tmp = real_img[4 * j:4 * j + 4, :, :, :]
+            else:
+                real_img_tmp = real_img[-1 - batch_size:-1, :, :, :]
+            if opt.masked_netE:
+                encoded = netE_copy(real_img_tmp, rectangle_mask, mask_width, opt.GAN)
+            else:
+                encoded = netE_copy(real_img_tmp)
+            encoded = encoded.reshape([batch_size, 120])
+            c = np.ones((batch_size,)) * class_number
+            category = torch.Tensor([c]).long().to(device)
+            c_shared = netG.shared(category).to(device)[0]
+            regenerated = netG(encoded, c_shared)
+            # if opt.masked_netE or opt.mask_in_loss:
+            display_results(opt, resolution, real_img_tmp, regenerated, folder_eval, 0, j, mask_width)
+            # else:
+            #     display_results(opt, resolution, real_img_tmp, regenerated, folder_eval, 0, j)
+        netE = netE.train()
 
     #save opt arguments
     file_name = folder_to_save + r'/inf.txt'
@@ -378,6 +525,8 @@ def train(opt):
     encoded_norm_total = []
     perceptual_total_loss = []
     norm_z_loss_total = []
+
+
     for epoch, epoch_loader in enumerate(pbar(
         training_utils.epoch_grouper(train_loader, epoch_batches),
         total=(opt.niter-start_ep)), start_ep):
@@ -417,7 +566,7 @@ def train(opt):
                         regenerated = netG(encoded)
                 elif opt.vae_like:
                     sample = torch.randn_like(encoded[:, nz:, :, :])
-                    encoded_mean  = encoded[:, nz:, :, :]
+                    encoded_mean = encoded[:, nz:, :, :]
                     encoded_sigma = torch.exp(encoded[:, :nz, :, :])
                     reparam = encoded_mean + encoded_sigma * sample
                     regenerated = netG(reparam)
@@ -472,12 +621,16 @@ def train(opt):
                         loss_perceptual = opt.lambda_lpips * diff.mean()
                     else:
                         # tmp = (perceptual_loss.forward(reshape(regenerated), reshape(fake_im),stop_layer=2))
+                        if opt.mask_width < 64:
+                            stop_slice = 2
+                        else:
+                            stop_slice = 3
                         if opt.mask_in_loss:
                             loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
-                                reshape(regenerated), reshape(fake_im),stop_layer=[2,True])).mean()
+                                reshape(regenerated), reshape(fake_im),stop_layer=[stop_slice,True,opt.mask_width])).mean()
                         else:
                             loss_perceptual = opt.lambda_lpips * (perceptual_loss.forward(
-                                reshape(regenerated), reshape(fake_im),stop_layer=[2,None])).mean() #receptive field of 14*14
+                                reshape(regenerated), reshape(fake_im),stop_layer=[stop_slice,None])).mean() #receptive field of 14*14
                 else:
                     if opt.DEBUG_PERCEPTUAL:
                         regenerated_vgg = vgg_output(regenerated, opt.vggModel)
@@ -493,8 +646,11 @@ def train(opt):
                 text += ' lpips %0.4f' % loss_perceptual.item()
                 loss += loss_perceptual
             if 'norm' in opt.losses:
-                norm_z_loss = opt.lambda_z_norm * (encoded ** 2).mean()
-                              # mse_loss(encoded.norm(2,dim=1),z_batch.norm(2,dim=1))
+                if 'norm0' in opt.losses:
+                    norm_z_loss = opt.lambda_z_norm * (encoded ** 2).mean()
+                                  # mse_loss(encoded.norm(2,dim=1),z_batch.norm(2,dim=1))
+                elif 'norm1' in opt.losses:
+                    norm_z_loss = opt.lambda_z_norm * ((encoded ** 2).mean() - 1)**2
                 norm_z_loss_total.append(norm_z_loss.detach().cpu())
                 text += ' norm z %0.4f' % norm_z_loss.item()
                 loss += norm_z_loss
@@ -508,7 +664,7 @@ def train(opt):
             encoded_norm_total.append((encoded ** 2).mean().detach().cpu())
             total_loss.append(loss.detach().cpu().numpy())
             # send losses to tensorboard
-            if epoch % 20 ==0 and step % 20 == 0:
+            if (epoch % 20 ==0 or epoch % 201==0) and step % 20 == 0:
                 total_batches = epoch * epoch_batches + step
                 if 'Z' in opt.losses:
                     writer.add_scalar('%s/loss/train_z' % folder_to_save, loss_z, total_batches)
@@ -558,9 +714,9 @@ def train(opt):
                 plt.close()
 
                 if not opt.masked:
-                    display_results(opt, resolution, fake_im, regenerated, folder_to_save, epoch, step)
+                    display_results(opt, resolution, fake_im, regenerated, folder_to_save, epoch, step,mask_width)
                 else:
-                    display_results(opt, resolution, fake_im, regenerated, folder_to_save, epoch, step, hints_fake)
+                    display_results(opt, resolution, fake_im, regenerated, folder_to_save, epoch, step,mask_width, hints_fake)
 
             if step == 1:
                 total_batches = epoch * epoch_batches + step
@@ -641,9 +797,9 @@ def train(opt):
 
                 if epoch % 10 == 0 and step % 5 == 0:
                     if not opt.masked:
-                        display_results(opt, resolution, fake_im, regenerated, folder_to_save_test, epoch, step)
+                        display_results(opt, resolution, fake_im, regenerated, folder_to_save_test, epoch, step, mask_width)
                     else:
-                        display_results(opt, resolution, fake_im, regenerated, folder_to_save_test, epoch, step, hints_fake)
+                        display_results(opt, resolution, fake_im, regenerated, folder_to_save_test, epoch, step, mask_width, hints_fake)
 
 
             # update running avg
@@ -673,7 +829,7 @@ def train(opt):
         netE.train()
 
         # do checkpointing
-        if epoch % 100 == 0 or epoch == opt.niter:
+        if epoch % 50 == 0 or epoch == opt.niter:
             training_utils.make_checkpoint(
                 netE, optimizerE, epoch,
                 test_metrics['loss_total'].avg.item(),
@@ -690,6 +846,60 @@ def train(opt):
                 test_metrics['loss_total'].avg.item(),
                 '%s/netE_epoch_best.pth' % (folder_to_save_checkpoints))
             best_val_loss = test_metrics['loss_total'].avg.item()
+        try:
+            # eval the model with real images
+            eval_model = False
+            if eval_model:
+                netE = netE.eval()
+                # load natural images
+                folder = '../SinGAN-master/Input/for_vgg/real'
+                files = glob.glob('%s/*' % folder)
+                real_img = torch.zeros((len(files), 3, resolution, resolution))
+                for i, file in enumerate(files):
+                    if ('png' in file or 'jpg' in file):
+                        x = img.imread(file)
+                        if x.shape[0] < resolution or x.shape[1] < resolution:
+                            continue
+                            # x = cv2.resize(x, (resolution, resolution))
+                        else:
+                            training_utils.best_place_to_insert(x, netE, resolution, folder_to_save)
+                            x = x[0:resolution, 0:resolution, :]
+                        # plt.imshow(x)
+                        # plt.show()
+                        x = x[:, :, :, None]
+                        x = x.transpose((3, 2, 0, 1)) / 255
+                        x = ((x - 0.5) * 2)  # .clamp(-1,1)
+                        x = torch.from_numpy(x)
+
+                        real_img[i, :, :, :] = x
+                        # x = x.type(torch.cuda.FloatTensor) if not (opt.not_cuda) else x.type(torch.FloatTensor)
+                # pass images through netE:
+                num_itr = int(np.ceil(len(files) / batch_size))
+                real_img = real_img.to(device)
+                folder_eval = os.path.join(folder_to_save, 'eval')
+                if not os.path.exists(folder_eval):
+                    os.makedirs(folder_eval)
+                for j in range(num_itr):
+                    if 4 * j + 4 < real_img.shape[0]:
+                        real_img_tmp = real_img[4 * j:4 * j + 4, :, :, :]
+                    else:
+                        real_img_tmp = real_img[-1 - batch_size:-1, :, :, :]
+                    if opt.masked_netE:
+                        encoded = netE(real_img_tmp, rectangle_mask, mask_width, opt.GAN)
+                    else:
+                        encoded = netE(real_img_tmp)
+                    encoded = encoded.reshape([batch_size, 120])
+                    c = np.ones((batch_size,)) * class_number
+                    category = torch.Tensor([c]).long().to(device)
+                    c_shared = netG.shared(category).to(device)[0]
+                    regenerated = netG(encoded, c_shared)
+                    # if opt.masked_netE or opt.mask_in_loss:
+                    display_results(opt, resolution, real_img_tmp, regenerated, folder_eval, 0, j, mask_width)
+                    # else:
+                    #     display_results(opt, resolution, real_img_tmp, regenerated, folder_eval, 0, j)
+                netE = netE.train()
+        except:
+            print('failed in eval')
 
 if __name__ == '__main__':
     import time

@@ -9,7 +9,7 @@ class LPIPS_Loss(nn.Module):
         if use_gpu:
             self.model = self.model.cuda()
 
-    def forward(self, pred, ref, stop_layer=[None,None]):
+    def forward(self, pred, ref, stop_layer=[None,None,16]):
         dist = self.model.forward(pred, ref, stop_layer)
         return dist
 

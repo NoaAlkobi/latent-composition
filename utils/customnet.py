@@ -5,8 +5,76 @@ Customized version of pytorch resnet, alexnets.
 import numpy, torch, math, os
 from torch import nn
 from collections import OrderedDict
-from torchvision.models import resnet
+import my_resnet as resnet
+# from torchvision.models import resnet
 from torchvision.models.alexnet import model_urls as alexnet_model_urls
+
+class CustomResNetNoPadding(nn.Module):
+    '''
+    Customizable ResNet, compatible with pytorch's resnet, but:
+     * The top-level sequence of modules can be modified to add
+       or remove or alter layers.
+     * Extra outputs can be produced, to allow backprop and access
+       to internal features.
+     * Pooling is replaced by resizable GlobalAveragePooling so that
+       any size can be input (e.g., any multiple of 32 pixels).
+     * halfsize=True halves striding on the first pooling to
+       set the default size to 112x112 instead of 224x224.
+    '''
+    def __init__(self, size=None, block=None, layers=None, num_classes=1000,
+            extra_output=None, modify_sequence=None, halfsize=False,
+                 channels_in=3):
+        standard_sizes = {
+            18: (resnet.BasicBlock, [2, 1, 1, 1])
+        }
+        assert (size in standard_sizes) == (block is None) == (layers is None)
+        if size in standard_sizes:
+            block, layers = standard_sizes[size]
+        if modify_sequence is None:
+            modify_sequence = lambda x: x
+        self.inplanes = 64
+        norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer # for recent resnet
+        self.dilation = 1
+        self.groups = 1
+        self.base_width = 64
+        sequence = modify_sequence([
+            ('conv1', nn.Conv2d(channels_in, 64, kernel_size=7, stride=2,
+                padding=0, bias=False)),
+            ('bn1', norm_layer(64)),
+            ('relu', nn.ReLU(inplace=True)),
+            ('maxpool', nn.MaxPool2d(3, stride=1 if halfsize else 2,
+                padding=0)),
+            ('layer1', self._make_layer(block, 64, layers[0])),
+            ('layer2', self._make_layer(block, 128, layers[1], stride=2)),
+            ('layer3', self._make_layer(block, 256, layers[2], stride=2)),
+            ('layer4', self._make_layer(block, 512, layers[3], stride=2)),
+            # ('avgpool', nn.AvgPool2d(8, stride=1)),
+            # ('convFC', nn.Conv2d(512,num_classes,1))
+            ('avgpool', GlobalAveragePool2d()),
+            ('fc', nn.Linear(512 * block.expansion, num_classes))
+        ])
+        super(CustomResNetNoPadding, self).__init__()
+        for name, layer in sequence:
+            setattr(self, name, layer)
+        self.extra_output = extra_output
+
+    def _make_layer(self, block, channels, depth, stride=1,padding=0):
+        return resnet.ResNet._make_layer(self, block, channels, depth, stride,padding=padding)
+
+    def forward(self, x):
+        extra = []
+        for name, module in self._modules.items():
+            # print(x.shape)
+            # print(module)
+            x = module(x)
+            if self.extra_output and name in self.extra_output:
+                extra.append(x)
+        if self.extra_output:
+            return (x,) + tuple(extra)
+        return x
+
+
 
 class CustomResNet(nn.Module):
     '''
@@ -52,6 +120,8 @@ class CustomResNet(nn.Module):
             ('layer2', self._make_layer(block, 128, layers[1], stride=2)),
             ('layer3', self._make_layer(block, 256, layers[2], stride=2)),
             ('layer4', self._make_layer(block, 512, layers[3], stride=2)),
+            # ('avgpool', nn.AvgPool2d(8, stride=1)),
+            # ('convFC', nn.Conv2d(512,num_classes,1))
             ('avgpool', GlobalAveragePool2d()),
             ('fc', nn.Linear(512 * block.expansion, num_classes))
         ])
@@ -60,12 +130,14 @@ class CustomResNet(nn.Module):
             setattr(self, name, layer)
         self.extra_output = extra_output
 
-    def _make_layer(self, block, channels, depth, stride=1):
-        return resnet.ResNet._make_layer(self, block, channels, depth, stride)
+    def _make_layer(self, block, channels, depth, stride=1,padding=1):
+        return resnet.ResNet._make_layer(self, block, channels, depth, stride,padding=1)
 
     def forward(self, x):
         extra = []
         for name, module in self._modules.items():
+            # print(x.shape)
+            # print(module)
             x = module(x)
             if self.extra_output and name in self.extra_output:
                 extra.append(x)
