@@ -48,6 +48,7 @@ def load_proggan_encoder(domain, nz=512, outdim=256, use_RGBM=True, use_VAE=Fals
     assert not(use_RGBM and use_VAE),'specify one of use_RGBM, use_VAE'
     if use_VAE:
         nz = nz*2
+
     channels_in = 4 if use_RGBM or use_VAE else 3
     print(f"Using halfsize?: {outdim<150}")
     print(f"Input channels: {channels_in}")

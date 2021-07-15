@@ -202,8 +202,6 @@ def train(opt):
             param.requires_grad_(False)
         opt.vggModel.eval()
         opt.vggModel.to(device)
-    if 'BigGAN' in opt.GAN and opt.one_class_only:
-        class_number = 208
     if not opt.continue_learning == '':
         if not len(glob.glob('training/' + opt.continue_learning + '/checkpoints/netE*.pth')) > 0:
             opt.continue_learning = ''
@@ -222,6 +220,7 @@ def train(opt):
             folder_to_save += '_DEBUG_PERCEPTUAL'
         if opt.mask_in_loss:
             opt.small_RF_lpips = 1
+            opt.losses='MSE_PERCEPTUAL_norm1'
             folder_to_save += '_masked_%d_losses' % opt.mask_width
         else:
             folder_to_save += '_losses'
@@ -239,10 +238,11 @@ def train(opt):
             folder_to_save += '_%.2f_norm_1' % opt.lambda_z_norm
         if opt.masked:
             folder_to_save += '_masked_model'
-        if 'BigGAN' in opt.GAN and opt.one_class_only:
-            class_number = 208
-            folder_to_save += '_one_class_only_%d' % class_number
-
+        if 'BigGAN' in opt.GAN:
+            class_number = np.random.randint(low=0, high=999, size=(opt.number_of_classes,))
+        folder_to_save += '_number_of_classes_%d' % opt.number_of_classes
+        if opt.predict_class:
+            folder_to_save += '_predict_class'
         if opt.masked_netE:
             folder_to_save += '_masked_netE_mask_width_%d' % mask_width
         # folder_to_save += 'training_%s' % str(now.strftime("%d_%m_%Y_%H_%M_%S"))
@@ -294,23 +294,20 @@ def train(opt):
         which_model = 'no_padd'
     else:
         which_model = 'orig'
-    # which_model = 'orig'
-    netE = proggan_networks.load_proggan_encoder(domain=None, nz=nz,
+    if opt.predict_class:
+        if opt.predict_class_one_hot:
+            nz_update = nz + 1
+        else:
+            #c_shared
+            nz_update = nz + 128
+    else:
+        nz_update = nz
+    netE = proggan_networks.load_proggan_encoder(domain=None, nz=nz_update,
                                                  outdim=out_shape,
                                                  use_RGBM=opt.masked,
                                                  use_VAE=opt.vae_like,
                                                  resnet_depth=depth,
                                                  ckpt_path=None,which_model=which_model)
-    #
-    # if not opt.padding:
-    #     for name, module in netE._modules.items():
-    #         if 'conv' in name or 'max' in name:
-    #             module.padding = (0,0)
-    #         if 'layer' in name:
-    #             for j in range(len(module)):
-    #                 module[j].conv1.padding = (0,0)
-    #                 module[j].conv2.padding = (0,0)
-
 
     if opt.masked_netE:
         netE = proggan_networks.MaskednetE(ratio,mask_width,netE)
@@ -521,8 +518,10 @@ def train(opt):
     mse_total_loss = []
     z_total_loss = []
     z_norm_total = []
-    l1_total_loss = []
     encoded_norm_total = []
+    l1_total_loss = []
+    c_norm_total = []
+    encoded_c_total = []
     perceptual_total_loss = []
     norm_z_loss_total = []
 
@@ -531,11 +530,9 @@ def train(opt):
         training_utils.epoch_grouper(train_loader, epoch_batches),
         total=(opt.niter-start_ep)), start_ep):
 
-
         # stopping condition
         if epoch > opt.niter:
             break
-
         # run a train epoch of epoch_batches batches
         for step, z_batch in enumerate(pbar(
             epoch_loader, total=epoch_batches), 1):
@@ -544,10 +541,7 @@ def train(opt):
                 fake_im = netG(z_batch).detach()
             elif 'BigGAN' in opt.GAN:
                 z_batch = torch.normal(0, 1, size=[batch_size, nz]).to(device)
-                if not opt.one_class_only:
-                    c = np.random.randint(low=0, high=999, size=(batch_size,))
-                else:
-                    c = np.ones((batch_size,)) * class_number
+                c = class_number[np.random.randint(low=0, high=opt.number_of_classes, size=(batch_size,))]
                 category = torch.Tensor([c]).long().to(device)
                 c_shared = netG.shared(category).to(device)[0]
                 fake_im = netG(z_batch, c_shared).detach()
@@ -585,8 +579,19 @@ def train(opt):
                 else:
                     encoded = netE(fake_im)
                 if 'BigGAN' in opt.GAN:
-                    encoded = encoded.reshape([batch_size, 120])
-                    regenerated = netG(encoded, c_shared)
+                    encoded = encoded.reshape([batch_size, encoded.shape[1]])
+                    if opt.predict_class:
+                        encoded_c = encoded[:,120::]
+                        encoded = encoded[:,0:120]
+                        if not opt.predict_class_one_hot:
+                            c_shared_encoded = encoded_c
+                        else:
+                            encoded_c = nn.functional.sigmoid(encoded_c)
+                            category = (1000*encoded_c).long().t()
+                            c_shared_encoded = netG.shared(category).to(device)[0]
+                        regenerated = netG(encoded, c_shared_encoded)
+                    else:
+                        regenerated = netG(encoded, c_shared)
                 else:
                     regenerated = netG(encoded)
             text = "Epoch %d step %d losses:" % (epoch, step)
@@ -662,6 +667,9 @@ def train(opt):
             # if 'norm' in opt.losses:
             z_norm_total.append((z_batch ** 2).mean().cpu())
             encoded_norm_total.append((encoded ** 2).mean().detach().cpu())
+            if opt.predict_class:
+                c_norm_total.append((c_shared ** 2).mean().cpu())
+                encoded_c_total.append((c_shared_encoded ** 2).mean().detach().cpu())
             total_loss.append(loss.detach().cpu().numpy())
             # send losses to tensorboard
             if (epoch % 20 ==0 or epoch % 201==0) and step % 20 == 0:
@@ -712,6 +720,14 @@ def train(opt):
                 plt.legend(['z_norm','encoded_norm'])
                 plt.savefig('%s/z_norm.jpg' % (folder_to_save))
                 plt.close()
+
+                if opt.predict_class:
+                    plt.figure()
+                    plt.plot(x, c_norm_total)
+                    plt.plot(x, encoded_c_total)
+                    plt.legend(['c_norm', 'encoded_norm'])
+                    plt.savefig('%s/c_norm.jpg' % (folder_to_save))
+                    plt.close()
 
                 if not opt.masked:
                     display_results(opt, resolution, fake_im, regenerated, folder_to_save, epoch, step,mask_width)
