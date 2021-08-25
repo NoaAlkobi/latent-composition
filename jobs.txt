@@ -1,11 +1,11 @@
-train_encoder.py --scenario_name=exp0_insert_class
-train_encoder.py --scenario_name=exp1_insert_class --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1 --batchSize=2
-train_encoder.py --scenario_name=exp2_insert_class --mask_width=16 --mask_in_loss=1 --losses=MSE_PERCEPTUAL_norm1 --batchSize=2
-train_encoder.py --scenario_name=exp3_insert_class_new --losses=MSE_PERCEPTUAL_norm0 --mask_in_loss=1 --batchSize=2
-
-
+train_encoder.py --scenario_name=exp3_insert_class_new --losses=MSE_PERCEPTUAL_norm0 --mask_in_loss=1
+train_encoder.py --scenario_name=exp1_insert_class --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1
 train_encoder.py --scenario_name=exp_unet3_new --predict_class=3 --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1
 train_encoder.py --scenario_name=exp_unet4_new --predict_class=4 --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1
 
+train_encoder.py --scenario_name=exp2_insert_class --mask_width=16 --mask_in_loss=1 --losses=MSE_PERCEPTUAL_norm1 --batchSize=2
+train_encoder.py --scenario_name=exp0_insert_class
+train_encoder.py --scenario_name=exp_unet1_new --predict_class=1 --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1
+train_encoder.py --scenario_name=exp_unet2_new --predict_class=2 --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1
 
---scenario_name=exp_unet3_new --predict_class=3 --losses=MSE_PERCEPTUAL_norm1 --mask_in_loss=1 --gpu_num=1
+
