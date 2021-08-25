@@ -57,6 +57,13 @@ def load_proggan_encoder(domain, nz=512, outdim=256, use_RGBM=True, use_VAE=Fals
                                       halfsize=outdim<150,
                                       modify_sequence=customnet.modify_layers,
                                       channels_in=channels_in)
+    elif 'unet' in which_model:
+        netE = UNET_encoder(nz)
+    elif 'insert_class' in which_model:
+        netE = customnet.CustomResNetInsertClass(size=resnet_depth, num_classes=nz,
+                                      halfsize=outdim<150,
+                                      modify_sequence=customnet.modify_layers,
+                                      channels_in=channels_in)
     else:
         netE = customnet.CustomResNetNoPadding(size=resnet_depth, num_classes=nz,
                                       halfsize=outdim<150,
@@ -147,9 +154,113 @@ class MaskednetE(nn.Module):
             x = self.to_z(x)
         return x
 
-def adjust_netE(netE, mask_width, resolution,ratio):
-    # ratio = int(resolution/mask_width)
-    netE.conv1 = nn.Conv2d(3,64, kernel_size = (ratio,ratio), dilation=(ratio,ratio))
-    netE.conv1.weight[:, :, 2:-2, 2:-2] = 0
-    netE.conv1.weight.requires_grad = False
 
+class MyConvBlock(nn.Sequential):
+    def __init__(self, in_channel, out_channel, ker_size, dilate):
+        super(MyConvBlock,self).__init__()
+        self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=ker_size, dilation=dilate, padding=0)
+        # self.norm = nn.BatchNorm2d(out_channel) #out_channel
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
+
+    def forward(self,x):
+        x = self.conv(x)
+        # x = self.norm(x)
+        x = self.relu(x)
+        # x = self.conv(x)
+        return x
+
+class Encoder_loss_network(nn.Module):
+    def __init__(self, resolution):
+        super(Encoder_loss_network, self).__init__()
+
+        self.block1 = MyConvBlock(in_channel=3, out_channel=32, ker_size=5, dilate=1)
+        self.block2 = MyConvBlock(in_channel=32, out_channel=32, ker_size=5, dilate=2)
+        self.block3 = MyConvBlock(in_channel=32, out_channel=64, ker_size=5, dilate=4)
+        self.block4 = MyConvBlock(in_channel=64, out_channel=64, ker_size=5, dilate=8)
+        self.block5 = MyConvBlock(in_channel=64, out_channel=128, ker_size=5, dilate=16)
+        self.block6 = MyConvBlock(in_channel=128, out_channel=128, ker_size=5, dilate=32)
+        # self.block7 = MyConvBlock(in_channel=128, out_channel=128, ker_size=5, dilate=4)
+        self.conv = nn.Conv2d(128, 1, kernel_size=4, padding=0)
+
+
+    def forward(self,x):
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+        x = self.block6(x)
+        # x = self.block7(x)
+        x = self.conv(x)
+        return x
+
+class UNET_encoder(nn.Module):
+    def __init__(self, nz):
+        super(UNET_encoder, self).__init__()
+
+        self.block1 = UNETConvBlockDown(in_channel=3, out_channel=32, ker_size=3,stride=2)
+        self.block2 = UNETConvBlockDown(in_channel=32, out_channel=64, ker_size=3,stride=2)
+        self.block3 = UNETConvBlockDown(in_channel=64, out_channel=64, ker_size=3,stride=2)
+        self.block4 = UNETConvBlockDown(in_channel=64, out_channel=32, ker_size=3,stride=2)
+
+        self.up = nn.Sequential()
+        self.up.add_module('block5',UNETConvBlockUp(in_channel=32, out_channel=64))
+        self.up.add_module('block6',UNETConvBlockUp(in_channel=64, out_channel=128))
+        if nz < 256:
+            self.up.add_module('block7',UNETConvBlockUp(in_channel=128, out_channel=nz))
+            self.up.add_module('block8', UNETConvBlockUp(in_channel=nz, out_channel=nz))
+        else:
+            self.up.add_module('block7', UNETConvBlockUp(in_channel=128, out_channel=256))
+            self.up.add_module('block8',UNETConvBlockUp(in_channel=256, out_channel=nz))
+
+        # self.block5 = UNETConvBlockUp(in_channel=32, out_channel=64)
+        # self.block6 = UNETConvBlockUp(in_channel=64, out_channel=128)
+        # self.block7 = UNETConvBlockUp(in_channel=128, out_channel=256)
+        # self.block8 = UNETConvBlockUp(in_channel=256, out_channel=nz)
+
+
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = x.mean(dim=(2, 3))
+        x = x.reshape((x.shape[0], x.shape[1], 1, 1))
+        x = self.up(x)
+        # x = self.block6(x)
+        # x = self.block7(x)
+        # x = self.block8(x)
+        return x
+
+class UNETConvBlockDown(nn.Sequential):
+    def __init__(self, in_channel, out_channel, ker_size,stride, dilate=1):
+        super(UNETConvBlockDown, self).__init__()
+        padd = int((ker_size-1)/2)
+        self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=ker_size, stride=stride, dilation=dilate, padding=padd)
+        self.norm = nn.BatchNorm2d(out_channel) #out_channel
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
+        # self.avgpool = nn.AvgPool2d(kernel_size=2,stride=2)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.norm(x)
+        x = self.relu(x)
+        # x = self.avgpool(x)
+
+        return x
+
+class UNETConvBlockUp(nn.Sequential):
+    def __init__(self, in_channel, out_channel, dilate=1):
+        super(UNETConvBlockUp, self).__init__()
+        self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=1, dilation=1, padding=0)
+        self.norm = nn.BatchNorm2d(out_channel) #out_channel
+        self.relu = nn.LeakyReLU(0.2, inplace=True)
+
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.norm(x)
+        x = self.relu(x)
+
+
+        return x

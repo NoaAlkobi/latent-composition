@@ -76,6 +76,153 @@ class CustomResNetNoPadding(nn.Module):
 
 
 
+class CustomResNetUNET(nn.Module):
+    '''
+    Customizable ResNet, compatible with pytorch's resnet, but:
+     * The top-level sequence of modules can be modified to add
+       or remove or alter layers.
+     * Extra outputs can be produced, to allow backprop and access
+       to internal features.
+     * Pooling is replaced by resizable GlobalAveragePooling so that
+       any size can be input (e.g., any multiple of 32 pixels).
+     * halfsize=True halves striding on the first pooling to
+       set the default size to 112x112 instead of 224x224.
+    '''
+    def __init__(self, size=None, block=None, layers=None, num_classes=1000,
+            extra_output=None, modify_sequence=None, halfsize=False,
+                 channels_in=3):
+        standard_sizes = {
+            18: (resnet.BasicBlock, [2, 2, 2, 2])
+        }
+        assert (size in standard_sizes) == (block is None) == (layers is None)
+        if size in standard_sizes:
+            block, layers = standard_sizes[size]
+        if modify_sequence is None:
+            modify_sequence = lambda x: x
+        self.inplanes = 64
+        norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer # for recent resnet
+        self.dilation = 1
+        self.groups = 1
+        self.base_width = 64
+        sequence = modify_sequence([
+            ('conv1', nn.Conv2d(channels_in, 64, kernel_size=7, stride=2,
+                padding=3, bias=False)),
+            ('bn1', norm_layer(64)),
+            ('relu', nn.ReLU(inplace=True)),
+            ('maxpool', nn.MaxPool2d(2, stride=2 if halfsize else 2,
+                padding=0)),
+            ('layer1', self._make_layer(block, 64, layers[0])),
+            ('layer2', self._make_layer(block, 128, layers[1], stride=2)),
+            ('layer3', self._make_layer(block, 256, layers[2], stride=2)),
+            ('layer4', self._make_layer(block, 512, layers[3], stride=2)),
+            # ('avgpool', nn.AvgPool2d(8, stride=1)),
+            # ('convFC', nn.Conv2d(512,num_classes,1))
+            ('avgpool', GlobalAveragePool2d()),
+            ('fc', nn.Linear(512 * block.expansion, num_classes))
+        ])
+        super(CustomResNetUNET, self).__init__()
+        for name, layer in sequence:
+            setattr(self, name, layer)
+        self.extra_output = extra_output
+
+    def _make_layer(self, block, channels, depth, stride=1,padding=0):
+        return resnet.ResNet._make_layer(self, block, channels, depth, stride,padding=padding)
+
+    def forward(self, x):
+        extra = []
+        for name, module in self._modules.items():
+            # print(x.shape)
+            # print(module)
+            x = module(x)
+            if self.extra_output and name in self.extra_output:
+                extra.append(x)
+        if self.extra_output:
+            return (x,) + tuple(extra)
+        return x
+
+
+
+class CustomResNetInsertClass(nn.Module):
+    '''
+    Customizable ResNet, compatible with pytorch's resnet, but:
+     * The top-level sequence of modules can be modified to add
+       or remove or alter layers.
+     * Extra outputs can be produced, to allow backprop and access
+       to internal features.
+     * Pooling is replaced by resizable GlobalAveragePooling so that
+       any size can be input (e.g., any multiple of 32 pixels).
+     * halfsize=True halves striding on the first pooling to
+       set the default size to 112x112 instead of 224x224.
+    '''
+    def __init__(self, size=None, block=None, layers=None, num_classes=1000,
+            extra_output=None, modify_sequence=None, halfsize=False,
+                 channels_in=3):
+        standard_sizes = {
+            18: (resnet.BasicBlock, [2, 2, 2, 2])
+        }
+        assert (size in standard_sizes) == (block is None) == (layers is None)
+        if size in standard_sizes:
+            block, layers = standard_sizes[size]
+        if modify_sequence is None:
+            modify_sequence = lambda x: x
+        self.inplanes = 64
+        norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer # for recent resnet
+        self.dilation = 1
+        self.groups = 1
+        self.base_width = 64
+        # self.first_insert_class = nn.Linear(128, 128*128*64)
+        # self.second_insert_class = nn.Linear(128,64*64*64)
+        sequence = modify_sequence([
+            ('conv1', nn.Conv2d(channels_in, 64, kernel_size=7, stride=2,
+                padding=3, bias=False)),
+            ('bn1', norm_layer(64)),
+            ('relu', nn.ReLU(inplace=True)),
+            ('maxpool', nn.MaxPool2d(3, stride=1 if halfsize else 2,
+                padding=1)),
+            # ('first_insert_layer', nn.Linear(128, 64*64*64)),
+            ('layer1', self._make_layer(block, 64, layers[0],inplanes=64+128)),
+            # ('second_insert_layer', nn.Linear(128, 64*64*64)),
+            ('layer2', self._make_layer(block, 128, layers[1], stride=2,inplanes = 64+128)),
+            ('layer3', self._make_layer(block, 256, layers[2], stride=2)),
+            ('layer4', self._make_layer(block, 512, layers[3], stride=2)),
+            # ('avgpool', nn.AvgPool2d(8, stride=1)),
+            # ('convFC', nn.Conv2d(512,num_classes,1))
+            ('avgpool', GlobalAveragePool2d()),
+            ('fc', nn.Linear(512 * block.expansion, num_classes))
+        ])
+
+        super(CustomResNetInsertClass, self).__init__()
+        for name, layer in sequence:
+            setattr(self, name, layer)
+        self.extra_output = extra_output
+
+    def _make_layer(self, block, channels, depth, stride=1,padding=1,inplanes=0):
+        return resnet.ResNet._make_layer(self, block, channels, depth, stride,padding=1,inplanes=inplanes)
+
+    def forward(self,x,c):
+        extra = []
+        for name, module in self._modules.items():
+            if 'layer1' in name or 'layer2' in name:
+                c_tmp = c.unsqueeze(2).unsqueeze(3).expand(c.shape[0],128,x.shape[2],x.shape[3])
+                x = torch.cat((x,c_tmp),1)
+            # if 'second_insert_layer' in name:
+            #     tmp = module(c).reshape((c.shape[0],64,64,64))
+            #     x = x + module(c).reshape((c.shape[0],64,64,64))
+            # elif 'first_insert_layer' in name:
+            #     tmp = module(c).reshape((c.shape[0],64,64,64))
+            #     x = x + module(c).reshape((c.shape[0],64,64,64))
+            # else:
+            x = module(x)
+            if self.extra_output and name in self.extra_output:
+                extra.append(x)
+        if self.extra_output:
+            return (x,) + tuple(extra)
+        return x
+
+
+
 class CustomResNet(nn.Module):
     '''
     Customizable ResNet, compatible with pytorch's resnet, but:

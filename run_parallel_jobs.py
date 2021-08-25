@@ -10,7 +10,7 @@ if __name__ == '__main__':
 
     warnings.filterwarnings("ignore")
     parser = argparse.ArgumentParser()
-    parser.add_argument('--wait_time', help='In minutes', default=30, type=float)
+    parser.add_argument('--wait_time', help='In minutes', default=10, type=float)
     parser.add_argument('--gpu_num', help='GPU id to use', default=[0, 1, 2, 3], type=str)
     args = parser.parse_args()
     wait_time = args.wait_time * 60
@@ -48,16 +48,16 @@ while 1:
             path_to_output_file = os.path.join('training', 'run_logs', log_filename)
             # scenario_name = job_str.split('job_id')[1].split()[0].strip("'")
             job_found = True
-            # while os.path.exists(path_to_output_file):
-            #     job_str = fid.readline()
-            #     job_str = job_str.strip('\n')
-            #     if job_str == '':
-            #         job_found = False
-            #         break
-            #     scenario_name = job_str.split('scenario_name')[1].split()[0].strip("'")
-            #     log_filename = scenario_name + '.txt'
-            #     path_to_output_file = os.path.join('training', 'run_logs', log_filename)
-            #     # scenario_name = job_str.split('job_id')[1].split()[0].strip("'")
+            while os.path.exists(path_to_output_file):
+                job_str = fid.readline()
+                job_str = job_str.strip('\n')
+                if job_str == '':
+                    job_found = False
+                    break
+                scenario_name = job_str.split('scenario_name')[1].split()[0].strip("'")
+                log_filename = scenario_name + '.txt'
+                path_to_output_file = os.path.join('training', 'run_logs', log_filename)
+                # scenario_name = job_str.split('job_id')[1].split()[0].strip("'")
             if not job_found:
                 break
             idx = job_str.find('--gpu_num')
